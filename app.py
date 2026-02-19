@@ -4,69 +4,58 @@ import gspread
 import plotly.graph_objects as go
 from datetime import datetime
 
-# --- CONFIGURACIÓN DE PÁGINA FORZADA ---
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Performance Outsourcing", layout="wide", initial_sidebar_state="collapsed")
 
 VALDI_NAVY = "#0d1b3e"
 VALDI_PINK = "#d63384"
 
-# CSS para blindar el diseño contra cambios de navegador
+# --- CSS DE ALTA PRIORIDAD PARA BLINDAR EL DISEÑO ---
 st.markdown(f"""
     <style>
-    /* Forzar fondo claro */
+    /* Forzar fondo claro en toda la app */
     .stApp {{ background-color: #f8f9fc !important; }}
     
-    /* Estilo del Header Superior */
-    .valdi-navbar {{
-        background: {VALDI_NAVY};
-        padding: 20px 40px;
-        border-bottom: 5px solid {VALDI_PINK};
+    /* Ocultar elementos innecesarios de Streamlit */
+    #MainMenu, footer, header {{ visibility: hidden !important; }}
+
+    /* Banner Superior Valdishopper */
+    .valdi-banner {{
+        background-color: {VALDI_NAVY} !important;
+        padding: 30px 40px;
+        border-bottom: 6px solid {VALDI_PINK} !important;
         border-radius: 10px;
-        margin-bottom: 30px;
+        margin-bottom: 25px;
         display: flex;
         justify-content: space-between;
         align-items: center;
+        color: white !important;
     }}
-    
-    /* Contenedor de Filtros alineado */
-    .filter-row {{
-        display: flex;
-        gap: 20px;
-        background: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        margin-bottom: 25px;
-    }}
+    .valdi-banner h1 {{ color: white !important; margin: 0 !important; font-size: 28px !important; }}
+    .valdi-banner p {{ color: {VALDI_PINK} !important; margin: 0 !important; font-weight: bold !important; }}
 
-    /* Tarjetas de Métricas consistentes */
+    /* Tarjetas de Métricas Blancas */
     .metric-container {{
         display: flex;
         justify-content: space-between;
-        gap: 15px;
+        gap: 20px;
         margin-bottom: 30px;
     }}
     .metric-card {{
-        background: white;
+        background-color: white !important;
         padding: 25px;
         border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important;
         text-align: center;
         flex: 1;
-        border: 1px solid #eee;
+        border: 1px solid #eee !important;
     }}
-    .metric-title {{ color: #7f8c8d; font-size: 0.85rem; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; }}
-    .metric-value {{ color: {VALDI_NAVY}; font-size: 2rem; font-weight: 900; }}
-    
-    /* Botones Valdishopper */
-    .stButton>button {{
-        background-color: {VALDI_PINK} !important;
-        color: white !important;
-        border-radius: 8px !important;
-        border: none !important;
-        font-weight: bold !important;
-        height: 45px;
-    }}
+    .metric-title {{ color: #7f8c8d !important; font-size: 0.9rem !important; font-weight: bold !important; text-transform: uppercase; margin-bottom: 10px; }}
+    .metric-value {{ color: {VALDI_NAVY} !important; font-size: 2.2rem !important; font-weight: 900 !important; }}
+
+    /* Fix para Filtros y Labels (Forzar color negro/navy sobre fondo claro) */
+    label, .stSelectbox, .stDateInput {{ color: {VALDI_NAVY} !important; font-weight: 600 !important; }}
+    div[data-baseweb="select"] {{ background-color: white !important; border-radius: 8px !important; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -79,11 +68,10 @@ def load_data():
     df = pd.DataFrame(sh.worksheet("Resumen Diario Outsourcing").get_all_records())
     df.columns = df.columns.str.strip().str.lower()
     
-    # Limpieza definitiva SKU (basado en correcciones previas)
+    # Limpieza de datos (Evitar el 0 de más en SKU)
     df['sku totales'] = df['sku totales'].astype(str).str.replace(r'[\.\,]', '', regex=True)
     df['sku totales'] = pd.to_numeric(df['sku totales'], errors='coerce').fillna(0).astype(int)
     
-    # Limpieza Pago
     df['pago variable'] = df['pago variable'].astype(str).str.replace(r'[\$\.\s]', '', regex=True)
     df['pago variable'] = pd.to_numeric(df['pago variable'], errors='coerce').fillna(0)
     
@@ -93,31 +81,29 @@ def load_data():
 try:
     df_raw = load_data()
 
-    # Navbar Superior (HTML Directo para estabilidad)
+    # --- HEADER SUPERIOR ---
     st.markdown(f"""
-        <div class="valdi-navbar">
+        <div class="valdi-banner">
             <div>
-                <h1 style="color:white; margin:0; font-size:24px;">Performance Outsourcing</h1>
-                <p style="color:{VALDI_PINK}; font-weight:bold; margin:0; font-size:14px;">VALDISHOPPER</p>
+                <h1>Performance Outsourcing</h1>
+                <p>VALDISHOPPER</p>
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-    # Botón de envío alineado arriba a la derecha (opcional, o debajo de filtros)
-    col_envio1, col_envio2 = st.columns([8, 2])
-    with col_envio2:
-        if st.button("📧 ENVIAR A PRESTADORES", use_container_width=True):
-            st.info("Procesando...")
-
-    # Fila de Filtros (Simulando la estructura original)
-    f1, f2, f3 = st.columns(3)
-    with f1:
+    # --- FILTROS Y BOTÓN DE ENVÍO ---
+    c_f1, c_f2, c_f3, c_btn = st.columns([3, 2, 2, 3])
+    with c_f1:
         salas = ["Todas las Salas"] + sorted([str(s) for s in df_raw['local'].unique()])
         sala_sel = st.selectbox("SALA", options=salas)
-    with f2:
+    with c_f2:
         f_inicio = st.date_input("DESDE", df_raw['fecha día'].min().date())
-    with f3:
+    with c_f3:
         f_fin = st.date_input("HASTA", df_raw['fecha día'].max().date())
+    with c_btn:
+        st.write("") # Espaciador
+        if st.button("📧 ENVIAR A PRESTADORES", use_container_width=True):
+            st.info("Iniciando proceso de envío masivo...")
 
     # Lógica de filtrado
     df = df_raw.copy()
@@ -127,7 +113,7 @@ try:
     
     df['cumple_meta'] = df['sku totales'] >= 200
 
-    # KPIs con tarjetas HTML (Blindadas contra CSS externo)
+    # --- MÉTRICAS (HTML DIRECTO PARA EVITAR DEFORMACIÓN) ---
     eficacia = (df['cumple_meta'].sum() / len(df) * 100) if len(df) > 0 else 0
     st.markdown(f"""
         <div class="metric-container">
@@ -138,8 +124,8 @@ try:
         </div>
     """, unsafe_allow_html=True)
 
-    # Gráfico Profesional
-    st.markdown("### Tendencia de Productividad")
+    # --- GRÁFICO ---
+    st.markdown("<h3 style='color:#0d1b3e;'>Tendencia de Productividad</h3>", unsafe_allow_html=True)
     df_chart = df.groupby(df['fecha día'].dt.date).agg({'sku totales': 'sum', 'cumple_meta': 'mean'}).reset_index()
     
     fig = go.Figure()
@@ -148,14 +134,14 @@ try:
     
     fig.update_layout(
         paper_bgcolor='white', plot_bgcolor='white',
-        yaxis=dict(title="SKU Totales", showgrid=True, gridcolor='#eee'),
+        yaxis=dict(title="SKU Totales", gridcolor='#eee'),
         yaxis2=dict(title="% Meta", overlaying="y", side="right", range=[0, 100], showgrid=False),
         margin=dict(l=0, r=0, t=10, b=0), height=350, showlegend=False
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Detalle de Tabla
-    st.markdown("### Detalle")
+    # --- TABLA DETALLE ---
+    st.markdown("<h3 style='color:#0d1b3e;'>Detalle de Gestión</h3>", unsafe_allow_html=True)
     df_tabla = df[['local', 'rut', 'fecha día', 'sku totales', 'pago variable']].copy()
     df_tabla['fecha día'] = df_tabla['fecha día'].dt.strftime('%d-%m-%Y')
     df_tabla.columns = ['SALA', 'RUT', 'FECHA', 'SKU', 'PAGO VARIABLE']
