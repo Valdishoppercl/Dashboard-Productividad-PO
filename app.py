@@ -1,127 +1,118 @@
 import streamlit as st
 import pandas as pd
 import gspread
-import plotly.express as px
 import plotly.graph_objects as go
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
-# --- CONFIGURACIÓN ESTÉTICA ---
-st.set_page_config(page_title="Productividad | Valdishopper", layout="wide")
+# --- CONFIGURACIÓN DE PÁGINA (Estilo Valdishopper) ---
+st.set_page_config(page_title="Performance Outsourcing", layout="wide")
 
 VALDI_NAVY = "#0d1b3e"
 VALDI_PINK = "#d63384"
-VALDI_BG = "#f8f9fc"
 
+# Estilo para ocultar menús de Streamlit y mejorar la tabla
 st.markdown(f"""
     <style>
-    .stApp {{ background-color: {VALDI_BG}; }}
-    .main-header {{
-        background-color: {VALDI_NAVY};
-        padding: 15px 40px;
-        border-bottom: 4px solid {VALDI_PINK};
-        color: white;
-        margin-bottom: 20px;
-    }}
+    .main {{ background-color: #f8f9fc; }}
+    [data-testid="stHeader"] {{ background: {VALDI_NAVY}; color: white; border-bottom: 4px solid {VALDI_PINK}; }}
+    h1 {{ color: {VALDI_NAVY}; font-size: 1.5rem !important; margin-bottom: 0px !important; }}
+    .metric-card {{ background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); text-align: center; }}
     </style>
-    <div class="main-header">
-        <h1 style='margin:0; font-size: 1.5rem;'>Performance Outsourcing</h1>
-        <span style='color:{VALDI_PINK}; font-weight:700; font-size:0.8rem;'>VALDISHOPPER</span>
-    </div>
 """, unsafe_allow_html=True)
 
-# --- FUNCIONES CORE ---
-
-def normalizar_rut(rut):
-    if not rut: return ""
+# --- CARGA Y LIMPIEZA ---
+def limpiar_rut(rut):
     import re
     return re.sub(r'[^0-9k]', '', str(rut).lower())
 
 @st.cache_data(ttl=600)
-def load_all_data():
+def load_data():
     creds = st.secrets["gcp_service_account"]
     gc = gspread.service_account_from_dict(creds)
     sh = gc.open_by_key("1c_jufd-06AgiNObBkz0KL0jfqlESKEKiqwFHZwr_9Xg")
     
-    df_prod = pd.DataFrame(sh.worksheet("Resumen Diario Outsourcing").get_all_records())
-    df_prod.columns = df_prod.columns.str.strip().str.lower()
+    # Cargar datos operativos
+    df = pd.DataFrame(sh.worksheet("Resumen Diario Outsourcing").get_all_records())
+    df.columns = df.columns.str.strip().str.lower()
     
-    df_buk = pd.DataFrame(sh.worksheet("BUK").get_all_records())
-    df_buk.columns = df_buk.columns.str.strip().str.lower()
+    # Limpieza de SKU: Quitar puntos de miles antes de convertir a número para evitar el "x10"
+    df['sku totales'] = pd.to_numeric(df['sku totales'].astype(str).str.replace('.', '', regex=False), errors='coerce').fillna(0)
     
-    return df_prod, df_buk
+    # Limpieza de Pago: Quitar $, puntos y espacios
+    df['pago variable'] = pd.to_numeric(df['pago variable'].astype(str).str.replace(r'[\$\.\s]', '', regex=True), errors='coerce').fillna(0)
+    
+    # Convertir fecha
+    df['fecha día'] = pd.to_datetime(df['fecha día'], dayfirst=True, errors='coerce')
+    
+    return df
 
-# --- PROCESAMIENTO ---
-
+# --- INTERFAZ ---
 try:
-    df_prod, df_buk = load_all_data()
-    
-    # Nombres de columnas detectados en tus errores previos
-    C_FECHA = 'fecha día'
-    C_SKU = 'sku totales'
-    C_PAGO = 'pago variable'
-    C_LOCAL = 'local'
-    C_RUT_PROD = 'rut'
-    C_RUT_BUK = 'colaborador - número de documento'
+    df_raw = load_data()
 
-    # 1. CONVERSIÓN CRÍTICA DE FECHA (Soluciona el error .dt)
-    df_prod[C_FECHA] = pd.to_datetime(df_prod[C_FECHA], dayfirst=True, errors='coerce')
-    
-    # Sidebar: Filtros
-    with st.sidebar:
-        st.header("Filtros")
-        locales = ["Todos"] + sorted(df_prod[C_LOCAL].unique().tolist())
-        f_local = st.selectbox("SALA", locales)
-        # Ajustamos el rango de fechas basado en los datos reales
-        min_date = df_prod[C_FECHA].min().date() if not df_prod[C_FECHA].isnull().all() else datetime.now().date()
-        max_date = df_prod[C_FECHA].max().date() if not df_prod[C_FECHA].isnull().all() else datetime.now().date()
-        
-        f_inicio = st.date_input("DESDE", min_date)
-        f_fin = st.date_input("HASTA", max_date)
+    # Encabezado (Réplica de tu Script)
+    col_t1, col_t2 = st.columns([8, 2])
+    with col_t1:
+        st.markdown(f"<h1>Performance Outsourcing</h1><span style='color:{VALDI_PINK}; font-weight:700;'>VALDISHOPPER</span>", unsafe_allow_html=True)
+    with col_t2:
+        if st.button("📧 ENVIAR A PRESTADORES", type="primary"):
+            st.info("Procesando envíos...")
+
+    # Filtros (Misma fila que en tu script)
+    st.markdown("---")
+    f1, f2, f3 = st.columns(3)
+    with f1:
+        salas = ["Todas las Salas"] + sorted([str(s) for s in df_raw['local'].unique()])
+        sala_sel = st.selectbox("SALA", options=salas)
+    with f2:
+        f_inicio = st.date_input("DESDE", df_raw['fecha día'].min())
+    with f3:
+        f_fin = st.date_input("HASTA", df_raw['fecha día'].max())
 
     # Aplicar Filtros
-    df_filt = df_prod.copy()
-    if f_local != "Todos":
-        df_filt = df_filt[df_filt[C_LOCAL] == f_local]
+    df = df_raw.copy()
+    if sala_sel != "Todas las Salas":
+        df = df[df['local'].astype(str) == sala_sel]
+    df = df[(df['fecha día'].dt.date >= f_inicio) & (df['fecha día'].dt.date <= f_fin)]
     
-    # Filtro de fecha usando .dt.date para comparar correctamente
-    df_filt = df_filt[(df_filt[C_FECHA].dt.date >= f_inicio) & (df_filt[C_FECHA].dt.date <= f_fin)]
+    df['cumple_meta'] = df['sku totales'] >= 200
 
-    # Limpieza numérica
-    df_filt[C_SKU] = pd.to_numeric(df_filt[C_SKU].astype(str).str.replace('.', ''), errors='coerce').fillna(0)
-    df_filt[C_PAGO] = pd.to_numeric(df_filt[C_PAGO].astype(str).str.replace(r'[\$\.]', '', regex=True), errors='coerce').fillna(0)
-    df_filt['cumple_meta'] = df_filt[C_SKU] >= 200
+    # KPIs (Cards blancas como en tu script)
+    st.write("")
+    k1, k2, k3, k4 = st.columns(4)
+    with k1: st.markdown(f"<div class='metric-card'><small>Turnos</small><br><b>{len(df)}</b></div>", unsafe_allow_html=True)
+    with k2: st.markdown(f"<div class='metric-card'><small>Metas OK</small><br><b style='color:green;'>{df['cumple_meta'].sum()}</b></div>", unsafe_allow_html=True)
+    with k3: 
+        eficacia = (df['cumple_meta'].sum() / len(df) * 100) if len(df) > 0 else 0
+        st.markdown(f"<div class='metric-card'><small>Eficacia</small><br><b style='color:{VALDI_PINK};'>{eficacia:.0f}%</b></div>", unsafe_allow_html=True)
+    with k4: st.markdown(f"<div class='metric-card'><small>Incentivo Total</small><br><b>${df['pago variable'].sum():,.0f}</b></div>", unsafe_allow_html=True)
 
-    # --- MÉTRICAS ---
-    m1, m2, m3, m4 = st.columns(4)
-    total_turnos = len(df_filt)
-    metas_ok = df_filt['cumple_meta'].sum()
-    eficacia = (metas_ok / total_turnos * 100) if total_turnos > 0 else 0
-    total_pago = df_filt[C_PAGO].sum()
-
-    m1.metric("Turnos", total_turnos)
-    m2.metric("Metas OK", metas_ok)
-    m3.metric("Eficacia", f"{eficacia:.1f}%")
-    m4.metric("Incentivo Total", f"${total_pago:,.0f}")
-
-    # --- GRÁFICOS ---
-    st.write("### Tendencia de Productividad")
-    df_daily = df_filt.groupby(df_filt[C_FECHA].dt.date).agg({C_SKU: 'sum', 'cumple_meta': 'mean'}).reset_index()
+    # Gráfico Demanda vs Cumplimiento (Doble eje como en tu script)
+    st.write("### Demanda vs Cumplimiento")
+    df_chart = df.groupby(df['fecha día'].dt.date).agg({'sku totales': 'sum', 'cumple_meta': 'mean'}).reset_index()
     
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=df_daily[C_FECHA], y=df_daily[C_SKU], name="SKU Totales", marker_color=VALDI_NAVY))
-    fig.add_trace(go.Scatter(x=df_daily[C_FECHA], y=df_daily['cumple_meta']*100, name="% Meta", line=dict(color=VALDI_PINK, width=3), yaxis="y2"))
+    fig.add_trace(go.Bar(x=df_chart['fecha día'], y=df_chart['sku totales'], name="SKU", marker_color='rgba(13,27,62,0.1)'))
+    fig.add_trace(go.Scatter(x=df_chart['fecha día'], y=df_chart['cumple_meta']*100, name="%", line=dict(color=VALDI_PINK, width=2), yaxis="y2"))
     
     fig.update_layout(
-        yaxis=dict(title="Volumen SKU"),
-        yaxis2=dict(title="% Cumplimiento", overlaying="y", side="right", range=[0, 100]),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        yaxis=dict(title="SKU"),
+        yaxis2=dict(title="%", overlaying="y", side="right", range=[0, 100]),
+        margin=dict(l=0, r=0, t=20, b=0), height=300, showlegend=False
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    st.dataframe(df_filt, use_container_width=True)
+    # Tabla Detalle (Columnas exactas de tu script)
+    st.write("### Detalle")
+    # Seleccionamos y renombramos solo lo que nos interesa
+    df_tabla = df[['local', 'rut', 'fecha día', 'sku totales', 'pago variable']].copy()
+    df_tabla['fecha día'] = df_tabla['fecha día'].dt.strftime('%d-%m-%Y')
+    df_tabla.columns = ['SALA', 'RUT', 'FECHA', 'SKU', 'PAGO VARIABLE']
+    
+    st.dataframe(df_tabla.sort_values('FECHA', ascending=False), use_container_width=True, hide_index=True)
 
 except Exception as e:
-    st.error(f"Error en el dashboard: {e}")
+    st.error(f"Error: {e}")
