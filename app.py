@@ -10,9 +10,9 @@ st.set_page_config(page_title="Performance PickerPro", layout="wide", initial_si
 
 VALDI_NAVY = "#0d1b3e"
 VALDI_PINK = "#d63384"
-DARK_BG = "#0d1b3e" # Fondo azul oscuro profundo
+DARK_BG = "#0d1b3e" 
 
-# --- CSS PARA BLINDAR EL DISEÑO PROFESIONAL ---
+# --- CSS PARA BLINDAR EL DISEÑO ---
 st.markdown(f"""
     <style>
     /* Forzar fondo oscuro y texto claro */
@@ -29,7 +29,7 @@ st.markdown(f"""
         border-radius: 15px;
         margin-bottom: 25px;
     }}
-    .valdi-header h1 {{ color: white !important; margin: 0 !important; font-size: 28px !important; }}
+    .valdi-header h1 {{ color: white !important; margin: 0 !important; font-size: 28px !important; font-weight: 800 !important; }}
     .valdi-header p {{ color: {VALDI_PINK} !important; margin: 0 !important; font-weight: bold !important; font-size: 16px !important; }}
 
     /* Tarjetas de Métricas Blancas */
@@ -43,9 +43,17 @@ st.markdown(f"""
     .metric-title {{ color: #64748b !important; font-size: 0.9rem !important; font-weight: bold !important; text-transform: uppercase; }}
     .metric-value {{ color: {VALDI_NAVY} !important; font-size: 2.2rem !important; font-weight: 900 !important; }}
 
-    /* Estilo para los inputs de filtros */
+    /* Estilo para los inputs y alineación de botones */
     label {{ color: white !important; font-weight: bold !important; }}
     .stSelectbox div, .stDateInput div {{ background-color: #f8f9fc !important; border-radius: 10px !important; }}
+    
+    /* Botón ENVIAR color Pink */
+    div.stButton > button:first-child {{
+        background-color: {VALDI_PINK} !important;
+        color: white !important;
+        font-weight: bold !important;
+        border: none !important;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -56,10 +64,8 @@ def load_data():
     sh = gc.open_by_key("1c_jufd-06AgiNObBkz0KL0jfqlESKEKiqwFHZwr_9Xg")
     df = pd.DataFrame(sh.worksheet("Resumen Diario Outsourcing").get_all_records())
     df.columns = df.columns.str.strip().str.lower()
-    # Limpieza SKU anti-error x10
     df['sku totales'] = df['sku totales'].astype(str).str.replace(r'[\.\,]', '', regex=True)
     df['sku totales'] = pd.to_numeric(df['sku totales'], errors='coerce').fillna(0).astype(int)
-    # Limpieza Pago
     df['pago variable'] = df['pago variable'].astype(str).str.replace(r'[\$\.\s]', '', regex=True)
     df['pago variable'] = pd.to_numeric(df['pago variable'], errors='coerce').fillna(0)
     df['fecha día'] = pd.to_datetime(df['fecha día'], dayfirst=True, errors='coerce')
@@ -68,17 +74,18 @@ def load_data():
 try:
     df_raw = load_data()
 
-    # --- HEADER ---
+    # --- BANNER ---
     st.markdown(f'<div class="valdi-header"><h1>Performance PickerPro</h1><p>VALDISHOPPER</p></div>', unsafe_allow_html=True)
 
-    # --- FILTROS ALINEADOS CON BOTONES ---
-    f1, f2, f3, f4, f5 = st.columns([2.5, 2, 2, 1.5, 2])
-    with f1:
+    # --- FILTROS Y BOTONES EN UNA SOLA FILA ---
+    # Ajustamos proporciones para que queden alineados
+    c1, c2, c3, c4, c5 = st.columns([2.5, 2, 2, 1.5, 2])
+    with c1:
         salas = ["Todas las Salas"] + sorted([str(s) for s in df_raw['local'].unique()])
         sala_sel = st.selectbox("SALA", options=salas)
-    with f2:
+    with c2:
         f_ini = st.date_input("DESDE", df_raw['fecha día'].min().date())
-    with f3:
+    with c3:
         f_fin = st.date_input("HASTA", df_raw['fecha día'].max().date())
     
     # Filtrado
@@ -88,15 +95,16 @@ try:
     df = df[(df['fecha día'].dt.date >= f_ini) & (df['fecha día'].dt.date <= f_fin)]
     df['cumple_meta'] = df['sku totales'] >= 200
 
-    with f4:
-        st.write("") # Espaciador
+    # Botones alineados con los filtros
+    with c4:
+        st.write('<p style="margin-bottom:28px"></p>', unsafe_allow_html=True) # Alineación manual
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False, sheet_name='Reporte')
         st.download_button(label="📥 EXCEL", data=output.getvalue(), file_name=f"Reporte_{sala_sel}.xlsx", use_container_width=True)
-    with f5:
-        st.write("") # Espaciador
-        if st.button("📧 ENVIAR", type="primary", use_container_width=True):
+    with c5:
+        st.write('<p style="margin-bottom:28px"></p>', unsafe_allow_html=True) # Alineación manual
+        if st.button("📧 ENVIAR", use_container_width=True):
             st.success("Enviando reportes...")
 
     # --- KPIs ---
