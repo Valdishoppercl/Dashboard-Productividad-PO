@@ -6,24 +6,27 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
+import base64
 
-# --- CONFIGURACIÓN DE PÁGINA (Estilo Valdishopper) ---
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Performance Outsourcing", layout="wide")
 
 VALDI_NAVY = "#0d1b3e"
 VALDI_PINK = "#d63384"
 
-# Estilo para ocultar menús de Streamlit y mejorar la tabla
+# Estilos CSS para replicar tu Dashboard original
 st.markdown(f"""
     <style>
-    .main {{ background-color: #f8f9fc; }}
+    .stApp {{ background-color: #f8f9fc; }}
     [data-testid="stHeader"] {{ background: {VALDI_NAVY}; color: white; border-bottom: 4px solid {VALDI_PINK}; }}
     h1 {{ color: {VALDI_NAVY}; font-size: 1.5rem !important; margin-bottom: 0px !important; }}
-    .metric-card {{ background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); text-align: center; }}
+    .metric-card {{ background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-align: center; }}
+    .metric-title {{ color: #95a5a6; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; }}
+    .metric-value {{ color: {VALDI_NAVY}; font-size: 1.6rem; font-weight: 800; }}
     </style>
 """, unsafe_allow_html=True)
 
-# --- CARGA Y LIMPIEZA ---
+# --- CARGA Y LIMPIEZA DE DATOS ---
 def limpiar_rut(rut):
     import re
     return re.sub(r'[^0-9k]', '', str(rut).lower())
@@ -34,34 +37,43 @@ def load_data():
     gc = gspread.service_account_from_dict(creds)
     sh = gc.open_by_key("1c_jufd-06AgiNObBkz0KL0jfqlESKEKiqwFHZwr_9Xg")
     
-    # Cargar datos operativos
+    # Cargar datos de Producción
     df = pd.DataFrame(sh.worksheet("Resumen Diario Outsourcing").get_all_records())
     df.columns = df.columns.str.strip().str.lower()
     
-    # Limpieza de SKU: Quitar puntos de miles antes de convertir a número para evitar el "x10"
-    df['sku totales'] = pd.to_numeric(df['sku totales'].astype(str).str.replace('.', '', regex=False), errors='coerce').fillna(0)
+    # CORRECCIÓN SKU: Forzamos a string, quitamos puntos de miles y convertimos a entero
+    # Esto evita que '75' se convierta en '750' por errores de interpretación decimal
+    df['sku totales'] = df['sku totales'].astype(str).str.replace('.', '', regex=False)
+    df['sku totales'] = pd.to_numeric(df['sku totales'], errors='coerce').fillna(0).astype(int)
     
-    # Limpieza de Pago: Quitar $, puntos y espacios
-    df['pago variable'] = pd.to_numeric(df['pago variable'].astype(str).str.replace(r'[\$\.\s]', '', regex=True), errors='coerce').fillna(0)
+    # Limpieza de Pago Variable
+    df['pago variable'] = df['pago variable'].astype(str).str.replace(r'[\$\.\s]', '', regex=True)
+    df['pago variable'] = pd.to_numeric(df['pago variable'], errors='coerce').fillna(0)
     
-    # Convertir fecha
+    # Conversión de Fecha
     df['fecha día'] = pd.to_datetime(df['fecha día'], dayfirst=True, errors='coerce')
     
     return df
 
-# --- INTERFAZ ---
+# --- INTERFAZ PRINCIPAL ---
 try:
     df_raw = load_data()
 
-    # Encabezado (Réplica de tu Script)
-    col_t1, col_t2 = st.columns([8, 2])
+    # Header con botones
+    col_t1, col_t2 = st.columns([7, 3])
     with col_t1:
         st.markdown(f"<h1>Performance Outsourcing</h1><span style='color:{VALDI_PINK}; font-weight:700;'>VALDISHOPPER</span>", unsafe_allow_html=True)
     with col_t2:
-        if st.button("📧 ENVIAR A PRESTADORES", type="primary"):
-            st.info("Procesando envíos...")
+        c_b1, c_b2 = st.columns(2)
+        with c_b1:
+            if st.button("📥 CSV"):
+                csv = df_raw.to_csv(index=False).encode('utf-8-sig')
+                st.download_button("Confirmar Descarga", csv, "Export_Valdishopper.csv", "text/csv")
+        with c_b2:
+            if st.button("📧 ENVIAR A PRESTADORES", type="primary"):
+                st.info("Iniciando envío masivo...")
 
-    # Filtros (Misma fila que en tu script)
+    # Filtros (Fila horizontal como el original)
     st.markdown("---")
     f1, f2, f3 = st.columns(3)
     with f1:
@@ -78,19 +90,20 @@ try:
         df = df[df['local'].astype(str) == sala_sel]
     df = df[(df['fecha día'].dt.date >= f_inicio) & (df['fecha día'].dt.date <= f_fin)]
     
+    # Lógica de Meta
     df['cumple_meta'] = df['sku totales'] >= 200
 
-    # KPIs (Cards blancas como en tu script)
+    # --- KPIs (Cards Estilo Original) ---
     st.write("")
     k1, k2, k3, k4 = st.columns(4)
-    with k1: st.markdown(f"<div class='metric-card'><small>Turnos</small><br><b>{len(df)}</b></div>", unsafe_allow_html=True)
-    with k2: st.markdown(f"<div class='metric-card'><small>Metas OK</small><br><b style='color:green;'>{df['cumple_meta'].sum()}</b></div>", unsafe_allow_html=True)
+    with k1: st.markdown(f"<div class='metric-card'><div class='metric-title'>Turnos</div><div class='metric-value'>{len(df)}</div></div>", unsafe_allow_html=True)
+    with k2: st.markdown(f"<div class='metric-card'><div class='metric-title'>Metas OK</div><div class='metric-value' style='color:#27ae60;'>{df['cumple_meta'].sum()}</div></div>", unsafe_allow_html=True)
     with k3: 
         eficacia = (df['cumple_meta'].sum() / len(df) * 100) if len(df) > 0 else 0
-        st.markdown(f"<div class='metric-card'><small>Eficacia</small><br><b style='color:{VALDI_PINK};'>{eficacia:.0f}%</b></div>", unsafe_allow_html=True)
-    with k4: st.markdown(f"<div class='metric-card'><small>Incentivo Total</small><br><b>${df['pago variable'].sum():,.0f}</b></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-card'><div class='metric-title'>Eficacia</div><div class='metric-value' style='color:{VALDI_PINK};'>{eficacia:.0f}%</div></div>", unsafe_allow_html=True)
+    with k4: st.markdown(f"<div class='metric-card'><div class='metric-title'>Incentivo Total</div><div class='metric-value'>${df['pago variable'].sum():,.0f}</div></div>", unsafe_allow_html=True)
 
-    # Gráfico Demanda vs Cumplimiento (Doble eje como en tu script)
+    # --- GRÁFICOS (Réplica de tu diseño) ---
     st.write("### Demanda vs Cumplimiento")
     df_chart = df.groupby(df['fecha día'].dt.date).agg({'sku totales': 'sum', 'cumple_meta': 'mean'}).reset_index()
     
@@ -101,13 +114,13 @@ try:
     fig.update_layout(
         yaxis=dict(title="SKU"),
         yaxis2=dict(title="%", overlaying="y", side="right", range=[0, 100]),
-        margin=dict(l=0, r=0, t=20, b=0), height=300, showlegend=False
+        margin=dict(l=0, r=0, t=30, b=0), height=350, showlegend=False,
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Tabla Detalle (Columnas exactas de tu script)
+    # --- TABLA DETALLE (Columnas exactas solicitadas) ---
     st.write("### Detalle")
-    # Seleccionamos y renombramos solo lo que nos interesa
     df_tabla = df[['local', 'rut', 'fecha día', 'sku totales', 'pago variable']].copy()
     df_tabla['fecha día'] = df_tabla['fecha día'].dt.strftime('%d-%m-%Y')
     df_tabla.columns = ['SALA', 'RUT', 'FECHA', 'SKU', 'PAGO VARIABLE']
@@ -115,4 +128,4 @@ try:
     st.dataframe(df_tabla.sort_values('FECHA', ascending=False), use_container_width=True, hide_index=True)
 
 except Exception as e:
-    st.error(f"Error: {e}")
+    st.error(f"Error en el procesamiento: {e}")
