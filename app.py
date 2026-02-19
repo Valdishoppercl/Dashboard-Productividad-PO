@@ -2,9 +2,12 @@ import streamlit as st
 import pandas as pd
 import gspread
 import plotly.graph_objects as go
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
-# --- CONFIGURACIÓN DE SISTEMA (Forzar Tema Claro y Ocultar UI de Streamlit) ---
+# --- CONFIGURACIÓN DE PÁGINA (Tema Forzado) ---
 st.set_page_config(
     page_title="Performance Outsourcing", 
     layout="wide", 
@@ -14,17 +17,17 @@ st.set_page_config(
 VALDI_NAVY = "#0d1b3e"
 VALDI_PINK = "#d63384"
 
-# --- BLOQUEO TOTAL DE FORMATO Y OCULTACIÓN DE BOTONES ---
+# --- BLOQUEO DE FORMATO Y OCULTACIÓN DE UI ---
 st.markdown(f"""
     <style>
-    /* 1. Forzar Fondo Claro en toda la aplicación */
+    /* 1. Forzar fondo claro y deshabilitar temas del navegador */
     .stApp {{
         background-color: #f8f9fc !important;
         color: {VALDI_NAVY} !important;
     }}
 
-    /* 2. OCULTAR BOTONES DE COMPARTIR, GITHUB Y MENÚ (Fork, Share, etc) */
-    header, footer, #MainMenu, .stDeployButton, [data-testid="stToolbar"], .viewerBadge_container__1QS13 {{
+    /* 2. Ocultar botones de Share, GitHub y Menús */
+    header, footer, #MainMenu, .stDeployButton, [data-testid="stToolbar"] {{
         visibility: hidden !important;
         display: none !important;
     }}
@@ -60,37 +63,41 @@ st.markdown(f"""
     .metric-title {{ color: #7f8c8d !important; font-size: 0.8rem !important; font-weight: bold !important; text-transform: uppercase; }}
     .metric-value {{ color: {VALDI_NAVY} !important; font-size: 1.8rem !important; font-weight: 800 !important; }}
 
-    /* 5. Forzar color de texto en inputs para evitar letras blancas en fondo claro */
+    /* 5. Inputs con fondo blanco y texto Navy */
     label, p, span, .stSelectbox div, .stDateInput div {{
         color: {VALDI_NAVY} !important;
     }}
     </style>
 """, unsafe_allow_html=True)
 
+# --- CARGA Y LIMPIEZA DE DATOS ---
 @st.cache_data(ttl=600)
 def load_data():
     creds = st.secrets["gcp_service_account"]
     gc = gspread.service_account_from_dict(creds)
     sh = gc.open_by_key("1c_jufd-06AgiNObBkz0KL0jfqlESKEKiqwFHZwr_9Xg")
     
+    # Cargar datos operativos
     df = pd.DataFrame(sh.worksheet("Resumen Diario Outsourcing").get_all_records())
     df.columns = df.columns.str.strip().str.lower()
     
-    # Fix SKU (Elimina el 0 de más)
+    # FIX SKU: Elimina puntos/comas de miles para evitar el error "x10"
     df['sku totales'] = df['sku totales'].astype(str).str.replace(r'[\.\,]', '', regex=True)
     df['sku totales'] = pd.to_numeric(df['sku totales'], errors='coerce').fillna(0).astype(int)
     
-    # Limpieza Pago
+    # Limpieza Pago Variable
     df['pago variable'] = df['pago variable'].astype(str).str.replace(r'[\$\.\s]', '', regex=True)
     df['pago variable'] = pd.to_numeric(df['pago variable'], errors='coerce').fillna(0)
     
+    # Convertir fecha
     df['fecha día'] = pd.to_datetime(df['fecha día'], dayfirst=True, errors='coerce')
+    
     return df
 
 try:
     df_raw = load_data()
 
-    # --- BANNER SUPERIOR (HTML DIRECTO) ---
+    # --- BANNER SUPERIOR ---
     st.markdown(f"""
         <div class="valdi-header">
             <div>
@@ -100,7 +107,7 @@ try:
         </div>
     """, unsafe_allow_html=True)
 
-    # --- FILTROS Y BOTÓN EN UNA FILA ---
+    # --- FILTROS Y ACCIONES ---
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     with c1:
         salas = ["Todas las Salas"] + sorted([str(s) for s in df_raw['local'].unique()])
@@ -121,7 +128,7 @@ try:
     
     df['cumple_meta'] = df['sku totales'] >= 200
 
-    # --- MÉTRICAS ---
+    # --- MÉTRICAS (HTML DIRECTO) ---
     eficacia = (df['cumple_meta'].sum() / len(df) * 100) if len(df) > 0 else 0
     st.markdown(f"""
         <div class="metric-row">
@@ -132,7 +139,7 @@ try:
         </div>
     """, unsafe_allow_html=True)
 
-    # --- GRÁFICO (FONDO BLANCO FORZADO) ---
+    # --- GRÁFICO (CON FONDO BLANCO) ---
     st.write("### Tendencia de Productividad")
     df_chart = df.groupby(df['fecha día'].dt.date).agg({'sku totales': 'sum', 'cumple_meta': 'mean'}).reset_index()
     
@@ -158,3 +165,4 @@ try:
 
 except Exception as e:
     st.error(f"Error técnico: {e}")
+
