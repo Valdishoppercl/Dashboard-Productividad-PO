@@ -2,11 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 import plotly.graph_objects as go
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime
-import base64
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Performance Outsourcing", layout="wide")
@@ -14,7 +10,7 @@ st.set_page_config(page_title="Performance Outsourcing", layout="wide")
 VALDI_NAVY = "#0d1b3e"
 VALDI_PINK = "#d63384"
 
-# Estilos CSS para replicar tu Dashboard original
+# Estilos CSS para réplica exacta del Dashboard
 st.markdown(f"""
     <style>
     .stApp {{ background-color: #f8f9fc; }}
@@ -27,23 +23,19 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- CARGA Y LIMPIEZA DE DATOS ---
-def limpiar_rut(rut):
-    import re
-    return re.sub(r'[^0-9k]', '', str(rut).lower())
-
 @st.cache_data(ttl=600)
 def load_data():
     creds = st.secrets["gcp_service_account"]
     gc = gspread.service_account_from_dict(creds)
     sh = gc.open_by_key("1c_jufd-06AgiNObBkz0KL0jfqlESKEKiqwFHZwr_9Xg")
     
-    # Cargar datos de Producción
     df = pd.DataFrame(sh.worksheet("Resumen Diario Outsourcing").get_all_records())
     df.columns = df.columns.str.strip().str.lower()
     
-    # CORRECCIÓN SKU: Forzamos a string, quitamos puntos de miles y convertimos a entero
-    # Esto evita que '75' se convierta en '750' por errores de interpretación decimal
-    df['sku totales'] = df['sku totales'].astype(str).str.replace('.', '', regex=False)
+    # --- CORRECCIÓN DEFINITIVA DE SKU (Evita el 0 de más) ---
+    # Paso 1: Convertir a string y quitar cualquier punto o coma de miles
+    df['sku totales'] = df['sku totales'].astype(str).str.replace('.', '', regex=False).str.replace(',', '', regex=False)
+    # Paso 2: Convertir a número y forzar entero (int)
     df['sku totales'] = pd.to_numeric(df['sku totales'], errors='coerce').fillna(0).astype(int)
     
     # Limpieza de Pago Variable
@@ -55,25 +47,19 @@ def load_data():
     
     return df
 
-# --- INTERFAZ PRINCIPAL ---
+# --- INTERFAZ ---
 try:
     df_raw = load_data()
 
-    # Header con botones
+    # Header
     col_t1, col_t2 = st.columns([7, 3])
     with col_t1:
         st.markdown(f"<h1>Performance Outsourcing</h1><span style='color:{VALDI_PINK}; font-weight:700;'>VALDISHOPPER</span>", unsafe_allow_html=True)
     with col_t2:
-        c_b1, c_b2 = st.columns(2)
-        with c_b1:
-            if st.button("📥 CSV"):
-                csv = df_raw.to_csv(index=False).encode('utf-8-sig')
-                st.download_button("Confirmar Descarga", csv, "Export_Valdishopper.csv", "text/csv")
-        with c_b2:
-            if st.button("📧 ENVIAR A PRESTADORES", type="primary"):
-                st.info("Iniciando envío masivo...")
+        st.write("") # Espaciador
+        st.button("📧 ENVIAR A PRESTADORES", type="primary", use_container_width=True)
 
-    # Filtros (Fila horizontal como el original)
+    # Filtros
     st.markdown("---")
     f1, f2, f3 = st.columns(3)
     with f1:
@@ -90,11 +76,9 @@ try:
         df = df[df['local'].astype(str) == sala_sel]
     df = df[(df['fecha día'].dt.date >= f_inicio) & (df['fecha día'].dt.date <= f_fin)]
     
-    # Lógica de Meta
     df['cumple_meta'] = df['sku totales'] >= 200
 
-    # --- KPIs (Cards Estilo Original) ---
-    st.write("")
+    # --- KPIs ---
     k1, k2, k3, k4 = st.columns(4)
     with k1: st.markdown(f"<div class='metric-card'><div class='metric-title'>Turnos</div><div class='metric-value'>{len(df)}</div></div>", unsafe_allow_html=True)
     with k2: st.markdown(f"<div class='metric-card'><div class='metric-title'>Metas OK</div><div class='metric-value' style='color:#27ae60;'>{df['cumple_meta'].sum()}</div></div>", unsafe_allow_html=True)
@@ -103,7 +87,7 @@ try:
         st.markdown(f"<div class='metric-card'><div class='metric-title'>Eficacia</div><div class='metric-value' style='color:{VALDI_PINK};'>{eficacia:.0f}%</div></div>", unsafe_allow_html=True)
     with k4: st.markdown(f"<div class='metric-card'><div class='metric-title'>Incentivo Total</div><div class='metric-value'>${df['pago variable'].sum():,.0f}</div></div>", unsafe_allow_html=True)
 
-    # --- GRÁFICOS (Réplica de tu diseño) ---
+    # --- GRÁFICO ---
     st.write("### Demanda vs Cumplimiento")
     df_chart = df.groupby(df['fecha día'].dt.date).agg({'sku totales': 'sum', 'cumple_meta': 'mean'}).reset_index()
     
@@ -119,7 +103,7 @@ try:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- TABLA DETALLE (Columnas exactas solicitadas) ---
+    # --- TABLA DETALLE ---
     st.write("### Detalle")
     df_tabla = df[['local', 'rut', 'fecha día', 'sku totales', 'pago variable']].copy()
     df_tabla['fecha día'] = df_tabla['fecha día'].dt.strftime('%d-%m-%Y')
@@ -128,4 +112,4 @@ try:
     st.dataframe(df_tabla.sort_values('FECHA', ascending=False), use_container_width=True, hide_index=True)
 
 except Exception as e:
-    st.error(f"Error en el procesamiento: {e}")
+    st.error(f"Error: {e}")
