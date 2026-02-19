@@ -4,31 +4,44 @@ import gspread
 import plotly.graph_objects as go
 from datetime import datetime
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Performance Outsourcing", layout="wide", initial_sidebar_state="collapsed")
+# --- CONFIGURACIÓN DE SISTEMA (Forzar Tema Claro y Ocultar UI de Streamlit) ---
+st.set_page_config(
+    page_title="Performance Outsourcing", 
+    layout="wide", 
+    initial_sidebar_state="collapsed"
+)
 
 VALDI_NAVY = "#0d1b3e"
 VALDI_PINK = "#d63384"
 
-# --- CSS DE ALTA PRIORIDAD (Anti-Modo Oscuro y Responsive) ---
+# --- BLOQUEO TOTAL DE FORMATO Y OCULTACIÓN DE BOTONES ---
 st.markdown(f"""
     <style>
-    /* Forzar fondo claro y deshabilitar temas del navegador */
-    .stApp {{ background-color: #f8f9fc !important; color: {VALDI_NAVY} !important; }}
-    
-    /* Banner Superior Estilo Script Original */
-    .valdi-banner {{
+    /* 1. Forzar Fondo Claro en toda la aplicación */
+    .stApp {{
+        background-color: #f8f9fc !important;
+        color: {VALDI_NAVY} !important;
+    }}
+
+    /* 2. OCULTAR BOTONES DE COMPARTIR, GITHUB Y MENÚ (Fork, Share, etc) */
+    header, footer, #MainMenu, .stDeployButton, [data-testid="stToolbar"], .viewerBadge_container__1QS13 {{
+        visibility: hidden !important;
+        display: none !important;
+    }}
+
+    /* 3. Banner Superior Valdishopper (Colores Originales) */
+    .valdi-header {{
         background-color: {VALDI_NAVY} !important;
         padding: 25px 40px;
         border-bottom: 6px solid {VALDI_PINK} !important;
         border-radius: 8px;
-        margin-bottom: 20px;
+        margin-bottom: 25px;
         color: white !important;
     }}
-    .valdi-banner h1 {{ color: white !important; margin: 0 !important; font-size: 26px !important; }}
-    .valdi-banner p {{ color: {VALDI_PINK} !important; margin: 0 !important; font-weight: bold !important; }}
+    .valdi-header h1 {{ color: white !important; margin: 0 !important; font-size: 26px !important; }}
+    .valdi-header p {{ color: {VALDI_PINK} !important; margin: 0 !important; font-weight: bold !important; }}
 
-    /* Tarjetas de Métricas (Siempre Blancas) */
+    /* 4. Tarjetas de Métricas (Siempre Blancas) */
     .metric-row {{
         display: flex;
         justify-content: space-between;
@@ -47,12 +60,9 @@ st.markdown(f"""
     .metric-title {{ color: #7f8c8d !important; font-size: 0.8rem !important; font-weight: bold !important; text-transform: uppercase; }}
     .metric-value {{ color: {VALDI_NAVY} !important; font-size: 1.8rem !important; font-weight: 800 !important; }}
 
-    /* Fix para Filtros (Forzar visibilidad) */
-    label {{ color: {VALDI_NAVY} !important; font-weight: 700 !important; }}
-    .stSelectbox div[data-baseweb="select"], .stDateInput div {{
-        background-color: white !important;
+    /* 5. Forzar color de texto en inputs para evitar letras blancas en fondo claro */
+    label, p, span, .stSelectbox div, .stDateInput div {{
         color: {VALDI_NAVY} !important;
-        border-radius: 8px !important;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -66,10 +76,11 @@ def load_data():
     df = pd.DataFrame(sh.worksheet("Resumen Diario Outsourcing").get_all_records())
     df.columns = df.columns.str.strip().str.lower()
     
-    # Limpieza SKU (Fix definitivo)
+    # Fix SKU (Elimina el 0 de más)
     df['sku totales'] = df['sku totales'].astype(str).str.replace(r'[\.\,]', '', regex=True)
     df['sku totales'] = pd.to_numeric(df['sku totales'], errors='coerce').fillna(0).astype(int)
     
+    # Limpieza Pago
     df['pago variable'] = df['pago variable'].astype(str).str.replace(r'[\$\.\s]', '', regex=True)
     df['pago variable'] = pd.to_numeric(df['pago variable'], errors='coerce').fillna(0)
     
@@ -79,9 +90,9 @@ def load_data():
 try:
     df_raw = load_data()
 
-    # --- BANNER SUPERIOR ---
+    # --- BANNER SUPERIOR (HTML DIRECTO) ---
     st.markdown(f"""
-        <div class="valdi-banner">
+        <div class="valdi-header">
             <div>
                 <h1>Performance Outsourcing</h1>
                 <p>VALDISHOPPER</p>
@@ -110,7 +121,7 @@ try:
     
     df['cumple_meta'] = df['sku totales'] >= 200
 
-    # --- MÉTRICAS (HTML MANUAL PARA ESTABILIDAD) ---
+    # --- MÉTRICAS ---
     eficacia = (df['cumple_meta'].sum() / len(df) * 100) if len(df) > 0 else 0
     st.markdown(f"""
         <div class="metric-row">
